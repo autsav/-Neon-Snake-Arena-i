@@ -111,6 +111,11 @@ export default function App() {
   const [musicUrl, setMusicUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const prevStatusRef = useRef<string>('');
+
+  // Viral monetization state
+  const [deathRoast, setDeathRoast] = useState<string | null>(null);
+  const [isGeneratingRoast, setIsGeneratingRoast] = useState(false);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -467,12 +472,168 @@ export default function App() {
     }
   };
 
+  // --- Viral feature: AI Death Roast ---
+
+  const generateDeathRoast = async (playerName: string, score: number, snakeLength: number, rank: number, totalPlayers: number) => {
+    setIsGeneratingRoast(true);
+    setDeathRoast(null);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const prompt = `You are a brutally funny but affectionate esports commentator. Write a 1-2 sentence "death epitaph" roast for a player who just lost a multiplayer neon snake game. Player: "${playerName}", Score: ${score} pts, Snake length: ${snakeLength} segments, Final rank: #${rank} out of ${totalPlayers} players. Be specific about their stats. Use gaming slang. Keep it under 35 words. Do NOT use quotes in your response.`;
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-lite-preview",
+        contents: prompt,
+      });
+      if (response.text) {
+        setDeathRoast(response.text.trim());
+      }
+    } catch {
+      setDeathRoast(`${playerName} played valiantly. The wall had other plans.`);
+    } finally {
+      setIsGeneratingRoast(false);
+    }
+  };
+
+  const generateShareCard = (
+    playerName: string,
+    playerColor: string,
+    score: number,
+    snakeLength: number,
+    rank: number,
+    totalPlayers: number,
+    roast: string
+  ): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 370;
+    const ctx = canvas.getContext('2d')!;
+
+    // Background
+    ctx.fillStyle = '#09090b';
+    ctx.fillRect(0, 0, 600, 370);
+
+    // Neon border glow
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = '#10b981';
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(8, 8, 584, 354);
+    ctx.shadowBlur = 0;
+
+    // Title
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 26px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('NEON SNAKE ARENA', 300, 52);
+
+    ctx.fillStyle = '#52525b';
+    ctx.font = '11px monospace';
+    ctx.fillText('POST-GAME AUTOPSY', 300, 72);
+
+    // Divider
+    ctx.strokeStyle = '#27272a';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(40, 85); ctx.lineTo(560, 85); ctx.stroke();
+
+    // Player colour swatch + name
+    ctx.fillStyle = playerColor;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = playerColor;
+    ctx.fillRect(40, 100, 28, 28);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = playerColor;
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(playerName, 80, 120);
+
+    // Stat boxes
+    const statBoxes = [
+      { label: 'SCORE', value: String(score), color: '#a78bfa' },
+      { label: 'LENGTH', value: String(snakeLength), color: '#38bdf8' },
+      { label: 'RANK', value: `#${rank}/${totalPlayers}`, color: '#fb923c' },
+    ];
+    statBoxes.forEach((s, i) => {
+      const bx = 40 + i * 185;
+      const by = 148;
+      ctx.strokeStyle = '#3f3f46';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, 170, 56);
+      ctx.fillStyle = s.color;
+      ctx.font = 'bold 20px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.value, bx + 85, by + 35);
+      ctx.fillStyle = '#52525b';
+      ctx.font = '9px monospace';
+      ctx.fillText(s.label, bx + 85, by + 50);
+    });
+
+    // AI Roast section
+    ctx.strokeStyle = '#27272a';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(40, 220); ctx.lineTo(560, 220); ctx.stroke();
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('AI VERDICT:', 40, 240);
+
+    // Word-wrap roast text
+    ctx.fillStyle = '#e4e4e7';
+    ctx.font = '13px sans-serif';
+    const words = roast.split(' ');
+    let line = '';
+    let ty = 262;
+    for (const word of words) {
+      const test = line + word + ' ';
+      if (ctx.measureText(test).width > 520 && line) {
+        ctx.fillText(line.trim(), 40, ty);
+        line = word + ' ';
+        ty += 22;
+      } else {
+        line = test;
+      }
+    }
+    if (line.trim()) ctx.fillText(line.trim(), 40, ty);
+
+    // Footer
+    ctx.strokeStyle = '#27272a';
+    ctx.beginPath(); ctx.moveTo(40, 338); ctx.lineTo(560, 338); ctx.stroke();
+
+    ctx.fillStyle = '#10b981';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('#NeonSnakeArena', 40, 358);
+
+    ctx.fillStyle = '#52525b';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('Can you beat this? Play now!', 560, 358);
+
+    return canvas.toDataURL('image/png');
+  };
+
   // Auto-commentate every 10 seconds if playing
   useEffect(() => {
     if (gameState?.status === 'PLAYING') {
       const interval = setInterval(() => getCommentary(), 10000);
       return () => clearInterval(interval);
     }
+  }, [gameState?.status]);
+
+  // Trigger AI death roast when game transitions to GAMEOVER
+  useEffect(() => {
+    if (!gameState || !myId) return;
+    const status = gameState.status;
+    if (status === 'GAMEOVER' && prevStatusRef.current !== 'GAMEOVER') {
+      const me = gameState.players[myId];
+      if (me) {
+        const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+        const rank = sorted.findIndex(p => p.id === myId) + 1;
+        generateDeathRoast(me.name, me.score, me.snake?.length || 0, rank, sorted.length);
+      }
+    }
+    prevStatusRef.current = status;
   }, [gameState?.status]);
 
   useEffect(() => {
@@ -915,38 +1076,83 @@ export default function App() {
         )}
 
         {gameState.status === 'GAMEOVER' && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-md rounded-3xl p-8">
-            <div className="text-center space-y-8 max-w-sm w-full">
-              <div className="space-y-2">
-                <Trophy size={64} className="text-yellow-500 mx-auto animate-pulse" />
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 backdrop-blur-md rounded-3xl p-6">
+            <div className="text-center space-y-4 max-w-sm w-full overflow-y-auto max-h-full">
+              <div className="space-y-1">
+                <Trophy size={48} className="text-yellow-500 mx-auto animate-pulse" />
                 <h2 className="text-4xl font-black text-white">GAME OVER</h2>
-                <p className="text-zinc-400 font-bold">Winner: <span className="text-emerald-400">{gameState.winner}</span></p>
+                <p className="text-zinc-400 font-bold text-sm">Winner: <span className="text-emerald-400">{gameState.winner}</span></p>
               </div>
-              
+
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-2">
                 {sortedPlayers.slice(0, 5).map((p, i) => (
                   <div key={p.id} className={`flex justify-between items-center ${i === 0 ? 'text-emerald-400 font-black' : 'text-zinc-500 text-sm'}`}>
-                    <span>{i+1}. {p.name}</span>
+                    <span>{i + 1}. {p.name}</span>
                     <span className="font-mono font-bold">{p.score}</span>
                   </div>
                 ))}
               </div>
-              
-              <button 
-                className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2"
-                onClick={() => alert('Replay system coming soon! Storing game states...')}
-              >
-                <Eye size={14} /> VIEW REPLAY
-              </button>
+
+              {/* AI Death Roast */}
+              {myPlayer && (
+                <div className="bg-zinc-900 border border-yellow-500/30 rounded-2xl p-4 text-left space-y-2">
+                  <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                    <Skull size={10} /> AI Verdict — {myPlayer.name}
+                  </p>
+                  {isGeneratingRoast ? (
+                    <div className="flex items-center gap-2 text-zinc-500 text-xs py-1">
+                      <div className="w-3 h-3 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                      Generating roast...
+                    </div>
+                  ) : deathRoast ? (
+                    <p className="text-zinc-300 text-xs leading-relaxed italic">"{deathRoast}"</p>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Share Your Shame button */}
+              {myPlayer && deathRoast && (
+                <button
+                  className="w-full py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2"
+                  onClick={() => {
+                    const sorted = Object.values(gameState.players).sort((a, b) => b.score - a.score);
+                    const rank = sorted.findIndex(p => p.id === myId) + 1;
+                    const url = generateShareCard(
+                      myPlayer.name, myPlayer.color, myPlayer.score,
+                      myPlayer.snake?.length || 0, rank, sorted.length, deathRoast
+                    );
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `neon-snake-${myPlayer.name}-roast.png`;
+                    a.click();
+                  }}
+                >
+                  <Trophy size={13} /> SHARE YOUR SHAME
+                </button>
+              )}
+
+              {/* Neon Pro CTA */}
+              <div className="bg-gradient-to-r from-purple-900/40 to-emerald-900/40 border border-purple-500/25 rounded-2xl p-4 text-left">
+                <p className="text-purple-400 font-black text-[10px] uppercase tracking-widest mb-1">Neon Pro</p>
+                <p className="text-zinc-400 text-[10px] leading-relaxed mb-3">
+                  Unlock custom snake trails, exclusive AI commentator voices, premium skins &amp; unlimited music generation.
+                </p>
+                <button
+                  onClick={() => window.open('https://ko-fi.com', '_blank')}
+                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs transition-all"
+                >
+                  Support &amp; Go Pro — $3/mo
+                </button>
+              </div>
 
               <div className="flex gap-3">
-                <button 
+                <button
                   onClick={handleRestart}
                   className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
                 >
                   RESTART
                 </button>
-                <button 
+                <button
                   onClick={() => setHasJoined(false)}
                   className="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-black text-lg transition-all active:scale-95"
                 >
